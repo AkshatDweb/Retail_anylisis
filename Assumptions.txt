@@ -1,0 +1,77 @@
+Assumptions — Retail Sales Analysis (PostgreSQL)
+Oct 20, 2026 · @Praveen Kumar Jha
+Purpose and scope
+These assumptions apply to all 15 analysis queries (Q1–Q15) in the Retail Sales Analysis project. They record the choices made wherever the requirements or the data left something open.
+The dataset has 6 tables: customers (12 rows), products (10), employees (5), orders (24), order_items (36) and returns (3). Orders run from 2 September 2024 to 19 May 2025.
+Revenue and pricing
+Net revenue is calculated for each order line and then summed to order, customer, product, category or month level.
+\text{Net revenue} = \text{quantity} \times \text{unit\_price\_at\_sale} \times (1 - \text{discount\_rate})
+1. discount_rate is a fraction (0.05 = 5% off). It applies to that order line only, not to the whole order.
+2. Revenue uses unit_price_at_sale, the price actually charged. products.unit_price is the current catalogue price and is used only in Q6.
+3. Pre-discount value (used in Q13) = quantity × unit_price_at_sale.
+4. All amounts are in Indian Rupees (₹). Taxes, shipping and payment fees are not in the data and are ignored.
+5. Every payment method (UPI, Card, Cash, Wallet) is treated as fully paid. Payment method does not change revenue.
+6. Values are rounded to 2 decimal places only in the final output, so intermediate rounding does not distort totals.
+Order status and returns
+Only orders with order_status = 'Delivered' count as completed sales. Returned and Cancelled orders are excluded from every revenue, spend and ranking figure.
+1. Status values are stored exactly as 'Delivered', 'Returned' and 'Cancelled': case-sensitive, with no extra spaces.
+2. A returned order is a full return of every item in it. The returns table records returns at order level and has no item-level detail.
+3. Each returned order has exactly one row in the returns table. A second row for the same order would double-count its value in Q13.
+4. Returned orders are left out of revenue entirely, rather than counted as sales and then subtracted as refunds.
+5. Cancelled orders never shipped, so they produce no revenue and no return.
+6. order_status and the returns table agree: every 'Returned' order has a return record. This holds for orders 5003, 5010 and 5018.
+Dates
+Revenue is assigned to the month of order_date, because the data has no delivery or payment date.
+1. Date ranges are inclusive at both ends. Q1 includes both 1 October 2024 and 31 March 2025.
+2. order_date is a DATE with no time part, so BETWEEN does not miss orders placed late on the last day.
+3. Months are calendar months, grouped by year and month together so the same month in different years is never merged.
+4. Months with no delivered orders would not appear in Q8 or Q12. Every month from September 2024 to May 2025 has at least one delivered order, so there are no gaps.
+Customers, employees and products
+Each order is credited to the employee recorded on it, regardless of department. Support (Pooja Iyer) and Operations (Karan Malhotra) staff also handle orders.
+1. A customer's location is customers.city, not the employee's branch_city.
+2. Customers and products are grouped by their ID, so two customers or products with the same name are never merged.
+3. stock_quantity is a current stock snapshot. It is not reduced by the orders in this dataset.
+4. stock_quantity is never NULL. In Q9, a NULL would fall into the ELSE branch and be labelled 'High Stock'.
+5. Each product belongs to exactly one category, and category names are spelled consistently.
+6. email, signup_date, monthly_salary and branch_city are descriptive only and are not used in any calculation.
+Query-specific assumptions
+Each question below adds one or two choices on top of the general assumptions above.
+Question
+Assumption
+Q1. Filtering and sorting
+"Between" includes both end dates. Only Delivered orders are listed.
+Q2. Multi-table JOIN
+"Matching records" means an INNER JOIN, so orders with a missing customer or employee are dropped. None are missing in this data.
+Q3. Aggregation and HAVING
+The ₹10,000 threshold applies to net revenue after discount. Peripherals (₹9,897.00) falls below it.
+Q4. Repeat customers
+"At least two orders" counts delivered orders only.
+Q5. LEFT JOIN
+Customers with no delivered orders appear with a count of 0. Every customer has at least one here.
+Q6. Subquery
+The average is a simple mean of all 10 catalogue prices, including unsold products, not weighted by sales (₹5,249.00).
+Q7. NOT EXISTS
+Customers with only returned or cancelled orders, or no orders, count as never having a delivered order. The query returns no rows here, which is a correct result.
+Q8. Date functions
+Each order is counted once (COUNT DISTINCT), because joining to order_items creates one row per item.
+Q9. CASE expression
+Stock of exactly 20 or 40 is Moderate Stock. Only stock above 40 is High Stock.
+Q10. Conditional aggregation
+Only the three known statuses are counted. Employees with no orders show 0 in every column.
+Q11. Window ranking
+RANK() is used, so ties share a rank and the next rank is skipped. Products with no delivered sales show ₹0 and still get a rank.
+Q12. Running total
+The running total accumulates across all months in date order and never resets at a year boundary.
+Q13. Return analysis
+A returned order is one with a row in the returns table. Its value is the full pre-discount value of all its items.
+Q14. CTE
+The average is taken only across customers with at least one delivered purchase. All 12 customers qualify here, so it equals the all-customer average (₹13,683.97).
+Q15. Business insight
+Percentage share uses total delivered net revenue from all customers (₹1,64,207.63), not just the top three. LIMIT 3 assumes no tie for third place, which holds here.
+Technical and environment
+The queries are written for PostgreSQL 12 or later and use PostgreSQL-specific syntax such as ::INT casts, DATE_TRUNC and TO_CHAR.
+1. CREATE DATABASE retail_analysis is run on its own. The session then connects to that database before the table and data scripts run.
+2. Scripts run in order: schema, then data, then queries. Foreign keys need customers, products and employees loaded before orders.
+3. Foreign keys are enforced, so every order has a valid customer and employee, and every order item has a valid order and product.
+4. The columns used in calculations (quantity, unit_price_at_sale, discount_rate, order_status, order_date) contain no NULLs.
+5. The data is a static sample. No rows are added, changed or deleted between queries, so results are reproducible.
